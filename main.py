@@ -18,8 +18,10 @@ def main():
     t = 0.0                             # s
     set_z = 20.0                        # m
     p = 1.0                             # pid control parameters
-    i = 1.0
-    d = 1.0
+    i = 0.1
+    d = 0.5
+    error = 0.0
+    cum_error = 0.0
     
     with open(file_path, "w") as file:
         #begin logging
@@ -39,7 +41,13 @@ def main():
             z += v*step
             
             #controller section
+            last_error = error
+            cum_error += error
             error = set_z - z
+            #motor speed update
+            motor_speed += p*error + i*cum_error + d*(error-last_error)
+            
+            
             
         
             

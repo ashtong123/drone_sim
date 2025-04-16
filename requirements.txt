@@ -1,1 +1,3 @@
 #requirements go here
+pip install matplotlib
+pip install PyQt6

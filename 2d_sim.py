@@ -16,15 +16,15 @@ def controller(set_x, set_z, x, z, roll, step):
     global z_cum
     global z_last
     
-    p_x = 1.0
+    p_x = 100.0
     i_x = 0.0
     d_x = 0.0
 
-    p_roll = 1.0
+    p_roll = 100.0
     i_roll = 0.0
     d_roll = 0.0
 
-    p_thr = 1.0
+    p_thr = 100.0
     i_thr = 0.0
     d_thr = 0.0
 
@@ -58,7 +58,7 @@ def main():
     x = 0.0     #location of drone CoG
     z = 0.0
     g = 9.81
-    theta = 30.0
+    theta = 0.0
     rpm1 = 0.0
     rpm2 = 0.0
     k = 1.0*9.81/30000  #conversion factor of rpm to thrust
@@ -73,9 +73,10 @@ def main():
     omega = 0.0
     step = 0.1
     runtime = 1000.0
-    
+    del_t = 0.2  #constraint overrun protection prediction timeline 
     set_z = 20.0
-    set_x = 5.0
+    set_x = 0.0
+    theta_t2 = 0.0
     
     z_plot = []
     x_plot = []
@@ -87,11 +88,11 @@ def main():
     rpm2_plot = []
     v_z_plot = []
     v_x_plot = []
-
+    pred_theta = []
     with open(file_path, "w") as file:
         #begin logging
         file.write("FLIGHT LOG\n")
-        file.write("t, z, x, theta, rpm1, rpm2, v_z, v_x, omega\n")
+        file.write("t, z, x, theta, rpm1, rpm2, v_z, v_x, omega, pred_theta\n")
     
         while(t < runtime):
             #determine the forces and torques
@@ -143,17 +144,70 @@ def main():
             
             #save data for plotting
             x_plot.append(x)
-            z_plot.append(x)
+            z_plot.append(z)
             theta_plot.append(theta)
             t_plot.append(t)
         
             #write data to logfile
-            file.write(f"{t:.3f}, {z:.3f}, {x:.3f}, {theta:.3f}, {rpm1:.3f}, {rpm2:.3f}, {v_z:.2f}, {v_x:.2f}, {omega:.2f}\n")
+            file.write(f"{t:.3f}, {z:.3f}, {x:.3f}, {theta:.3f}, {rpm1:.3f}, {rpm2:.3f}, {v_z:.2f}, {v_x:.2f}, {omega:.2f}, {theta_t2:.3f}\n")
 
             #controller action
-            output = controller(5, 10, x, z, theta, step)
-            rpm1 = output[0] + output[1]
-            rpm2 = -output[0] + output[1]
+            output = controller(set_x, set_z, x, z, theta, step)
+            rpm1 += (output[0] + output[1])
+            rpm2 += (-output[0] + output[1])
+        
+            #constraint overrun prediction and enforcement
+            del_rpm = 0.0
+            #predicted value of theta at some future time, t + del_t, assuming controller output is not modified any further over that time period
+            theta_t2 = theta + omega*del_t + k*b*(del_t**2)/(2*I)*(rpm1 - rpm2)
+            #if overrun in positive theta
+            if theta_t2 > 30.0:
+                #minimum rpm delta needed to prevent overrun at t +=  t_del
+                del_rpm = (30.0 - theta - omega*del_t)*2*I/(k*b*(del_t**2))
+            #if overrun in negative theta
+            elif theta_t2 < -30.0:
+                del_rpm = (-30.0 - theta - omega*del_t)*2*I/(k*b*(del_t**2))
+            
+            pred_theta.append(theta_t2)
+
+            #rpm saturation enforcement on controller output
+            if rpm1 > 30000.0:
+                rpm1 = 30000.0
+            elif rpm1 < 0.0:
+                rpm1 = 0.0
+
+            if rpm2 > 30000.0:
+                rpm2 = 30000.0
+            elif rpm2 < 0.0:
+                rpm2 = 0.0
+
+            #rpm adjustment based on constraint protection 
+            #if overrun at t += del_t is predicted, then an adjustment will be made to rpm1, rpm2 considering the value of
+            #del_rpm and the physical limits of motor rpm. If no overrun is predicted, del_rpm = 0.0, and nothing happens here.
+            rpm1 += del_rpm/2
+            rpm2 -= del_rpm/2
+            #try to distribute del_rpm
+            if rpm1 > 30000.0:
+                rpm2 -= (rpm1 - 30000.0)
+            elif rpm1 < 0.0:
+                rpm2 -= rpm1
+            if rpm2 > 30000.0:
+                rpm1 -= (rpm2 - 30000.0)
+            elif rpm2 < 0.0:
+                rpm1 -= rpm2
+
+            #one more rpm saturation enforcement in case del_rpm distribution caused us to overrun:
+            if rpm1 > 30000.0:
+                rpm1 = 30000.0
+            elif rpm1 < 0.0:
+                rpm1 = 0.0
+
+            if rpm2 > 30000.0:
+                rpm2 = 30000.0
+            elif rpm2 < 0.0:
+                rpm2 = 0.0
+
+
 
             t += step
         

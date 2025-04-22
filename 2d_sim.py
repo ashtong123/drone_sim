@@ -75,8 +75,8 @@ def main():
     a_z = 0.0
     alpha = 0.0
     omega = 0.0
-    step = 1.0
-    runtime = 10000.0
+    step = 0.001          #1ms steps
+    runtime = 300.0     #run for 5min
     del_t = 4.5 #constraint overrun protection prediction time 
     set_z = 20.0
     set_x = 100.0

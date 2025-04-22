@@ -18,17 +18,17 @@ def controller(set_x, set_z, x, z, roll, step):
     global z_cum
     global z_last
     
-    p_x = 0.0
+    p_x = 0.2
     i_x = 0.0
-    d_x = 0.0
+    d_x = 1.0
 
-    p_roll = 0.0
+    p_roll = 0.01
     i_roll = 0.0
-    d_roll = 0.0
+    d_roll = 3.7
 
-    p_thr = 0.0001
+    p_thr = 1.1
     i_thr = 0.0
-    d_thr = 0.0
+    d_thr = 18.0
 
     #motor roll outer loop
     x_err = set_x - x
@@ -40,9 +40,15 @@ def controller(set_x, set_z, x, z, roll, step):
     x_cum += x_err
     roll_1 = p_x*x_err + i_x*x_cum*step + d_x*(x_err - x_last)/step
     x_last = x_err
-    
+   
+    #saturation filter for roll set point
+    if roll_1 > 30.0:
+        roll_1 = 30.0
+    elif roll_1 < -30.0:
+        roll_1 = -30.0
+
     #motor roll inner loop
-    roll_err = roll_1 - roll
+    roll_err = roll_1  - roll
     roll_cum += roll_err
     roll_2 = p_roll*roll_err + i_roll*roll_cum*step + d_roll*(roll_err - roll_last)/step
     roll_last = roll_err 
@@ -59,10 +65,10 @@ def main():
     file_path = "my_text_file.csv"
     m = 0.1
     I = 0.1
-    x = 0.0     #location of drone CoG
+    x = 0.5     #location of drone CoG
     z = 0.0
     g = 9.81
-    theta = 0.0
+    theta = 3.0
     rpm1 = 0.0
     rpm2 = 0.0
     k = 0.3*9.81/30000  #conversion factor of rpm to thrust
@@ -75,11 +81,12 @@ def main():
     a_z = 0.0
     alpha = 0.0
     omega = 0.0
-    step = 0.001          #1ms steps
-    runtime = 300.0     #run for 5min
-    del_t = 4.5 #constraint overrun protection prediction time 
-    set_z = 20.0
-    set_x = 100.0
+
+    step = 0.001
+    runtime = 1000.0
+    del_t = 0.5 #constraint overrun protection prediction time 
+    set_z = 3.0
+    set_x = 0.0
     theta_t2 = 0.0
     del_rpm = 0.0
 
@@ -134,7 +141,7 @@ def main():
             alpha = t_o/I
             
             #position update (position update before velo update because position is based on initial velo)
-            x += (v_x*step * 0.5*a_x*(step**2))
+            x += (v_x*step + 0.5*a_x*(step**2))
             z += (v_z*step + 0.5*a_z*(step**2))
             theta += (omega*step + 0.5*alpha*(step**2))
 
@@ -144,22 +151,22 @@ def main():
             omega += alpha*step
             
             #enforcement of terminal velocity, using a simplified model here, assuming v_term = 15.0 
-            if v_x > 15.0:
-                v_x = 15.0
-            elif v_x < -15.0:
-                v_x = -15.0
+            if v_x > 3.0:
+                v_x = 3.0
+            elif v_x < -3.0:
+                v_x = -3.0
 
-            if v_z > 15.0:
-                v_z = 15.0
-            elif v_z < -15.0:
-                v_z = -15.0
+            if v_z > 3.0:
+                v_z = 3.0
+            elif v_z < -3.0:
+                v_z = -3.0
 
             #enforcement of terminal angular velocity, also a simplified model
-            if omega > 20.0:
-                omega = 20.0
-            elif omega < -20.0:
-                omega = -30.0
-            
+            if omega > 10.0:
+                omega = 10.0
+            elif omega < -10.0:
+                omega = -10.0
+           
             #save data for plotting
             x_plot.append(x)
             z_plot.append(z)

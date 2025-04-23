@@ -4,56 +4,68 @@ import classes
 
 x_cum = 0.0
 x_last = 0.0
+x_err = 0.0
 roll_cum = 0.0
 roll_last = 0.0
+roll_err = 0.0
 z_cum = 0.0
 z_last = 0.0
+z_err = 0.0
+roll_1 = 0.0
 
 
-def controller(set_x, set_z, drone, step, del_t):
+def controller(set_x, set_z, drone, step, del_t, t):
     #some vars are global to allow manipulation from main and controller methods
     global x_cum
     global x_last
+    global x_err
     global roll_cum
     global roll_last
+    global roll_err
     global z_cum
     global z_last
+    global z_err
+    global roll_1
     
-    p_x = 0.2
-    i_x = 0.0
-    d_x = 1.0
+    inner_loop_rr = 1       #how many steps between updates of the inner loop?
+    outer_loop_rr = 4       #how many steps between updates of the outer loop?
+    
+    p_x = 1.0
+    i_x = 300.0
+    d_x = 0.05
 
-    p_roll = 0.01
+    p_roll = 0.001
     i_roll = 0.0
-    d_roll = 3.7
+    d_roll = 0.011
 
-    p_thr = 1.1
+    p_thr = 0.01
     i_thr = 0.0
-    d_thr = 18.0
-
-    #motor roll outer loop
-    x_err = set_x - drone.pos[0]
-
-    #flipping because positive x error should lead to negative roll impulse and vice versa,
-    #alternative is having negative PID values, but this seems more appropriate
-    x_err *= -1
+    d_thr = 0.5
     
-    x_cum += x_err
-    roll_1 = p_x*x_err + i_x*x_cum*step + d_x*(x_err - x_last)/step
-    x_last = x_err
-   
-    #saturation filter for roll set point
-    if roll_1 > 30.0:
-        roll_1 = 30.0
-    elif roll_1 < -30.0:
-        roll_1 = -30.0
+    #if t is a multiple of outer_loop_rr*step
+    if t%(outer_loop_rr*step) == 0:
+        #motor roll outer loop
+        x_err = set_x - drone.pos[0]
+
+        #flipping because positive x error should lead to negative roll impulse and vice versa,
+        #alternative is having negative PID values, but this seems more appropriate
+        x_err *= -1
+        
+        x_cum += x_err
+        roll_1 = p_x*x_err + i_x*x_cum*step + d_x*(x_err - x_last)/step
+        x_last = x_err
+        #saturation filter for roll set point
+        if roll_1 > 30.0:
+            roll_1 = 30.0
+        elif roll_1 < -30.0:
+            roll_1 = -30.0
 
     #motor roll inner loop
     roll_err = roll_1  - drone.rot[0]
     roll_cum += roll_err
     roll_2 = p_roll*roll_err + i_roll*roll_cum*step + d_roll*(roll_err - roll_last)/step
     roll_last = roll_err 
-    
+
     #motor thrust
     z_err = set_z - drone.pos[1]
     z_cum += z_err
@@ -85,17 +97,19 @@ def controller(set_x, set_z, drone, step, del_t):
     if theta_t2 > 30.0:
         #minimum rpm delta needed to prevent overrun at t +=  t_del
         del_rpm = (30.0 - drone.rot[0] - drone.omega[0]*del_t)*2*drone.I/(drone.k*drone.b*(del_t**2))
-        drone.motor_output[0] += del_rpm/2
-        drone.motor_output[1] -= del_rpm/2
+        drone.motor_output[1] = 30000
+        drone.motor_output[0] = math.sqrt(del_rpm + (30000**2))
     #if overrun in negative theta
     elif theta_t2 < -30.0:
         del_rpm = (-30.0 - drone.rot[0] - drone.omega[0]*del_t)*2*drone.I/(drone.k*drone.b*(del_t**2))
-        drone.motor_output[0] -= del_rpm/2
-        drone.motor_output[1] += del_rpm/2
+        drone.motor_output[0] = 30000
+        drone.motor_output[1] = math.sqrt((30000**2) - del_rpm)
 
     #pred_theta.append(theta_t2)
     
+    #!!! no longer necessary, this is now done in the if else if block above
     #try to distribute del_rpm
+    """
     if drone.motor_output[0] > 30000.0:
         drone.motor_output[1] -= (drone.motor_output[0] - 30000.0)
     elif drone.motor_output[0] < 0.0:
@@ -104,6 +118,7 @@ def controller(set_x, set_z, drone, step, del_t):
         drone.motor_output[0] -= (drone.motor_output[1] - 30000.0)
     elif drone.motor_output[1] < 0.0:
         drone.motor_output[0] -= drone.motor_output[1]
+    """
 
     #one more rpm saturation enforcement in case del_rpm distribution caused us to overrun:
     if drone.motor_output[0] > 30000.0:
@@ -124,7 +139,7 @@ def controller(set_x, set_z, drone, step, del_t):
 def main():
     #simulation variables
     t = 0.0
-    runtime = 1000.0
+    runtime = 300.0
     global_step = 0.001         #global time resolution is 1ms
     controller_step = 0.001     #controller updates at 1000Hz, same as global
     del_t = 0.5
@@ -163,7 +178,7 @@ def main():
             t_plot.append(t)
             
             #controller reaction
-            controller(0.0, 3.0, drone, controller_step, del_t)
+            controller(0.0, 3.0, drone, controller_step, del_t, t)
 
 
             #time steps forward
